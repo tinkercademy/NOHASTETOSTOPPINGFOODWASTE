@@ -174,11 +174,25 @@ app.get('/api/food-expiration/:name', (req, res) => {
 
 // AI Vision endpoint for image analysis
 const vision = require('@google-cloud/vision');
+const fs = require('fs');
 
-// Initialize Vision client with service account
-const visionClient = new vision.ImageAnnotatorClient({
-  keyFilename: './google-service-account.json', // Path to your service account JSON
-});
+// Initialize Vision client with better error handling
+let visionClient = null;
+
+try {
+  if (fs.existsSync('./google-service-account.json')) {
+    console.log('Initializing Google Vision client with service account...');
+    visionClient = new vision.ImageAnnotatorClient({
+      keyFilename: './google-service-account.json',
+    });
+    console.log('Google Vision client initialized successfully');
+  } else {
+    console.log('Google service account not found - using mock AI only');
+  }
+} catch (error) {
+  console.error('Error initializing Google Vision client:', error);
+  console.log('Will fall back to mock AI');
+}
 
 app.post('/api/analyze-image', async (req, res) => {
   try {
@@ -188,20 +202,12 @@ app.post('/api/analyze-image', async (req, res) => {
       return res.status(400).json({ error: 'No image data provided' });
     }
 
-    // Check if service account file exists
-    const fs = require('fs');
-    const hasServiceAccount = fs.existsSync('./google-service-account.json');
-    
-    if (!hasServiceAccount) {
-      console.log('Service account not found!');
-      return res.status(500).json({ 
-        error: 'Google Vision API not configured',
-        type: 'none',
-        message: 'Vision API service account not found. Please add google-service-account.json'
-      });
+    // Use Google Vision API if available, otherwise mock
+    if (!visionClient) {
+      console.log('Google Vision not available, using mock AI...');
+      return await mockAIAnalysis(req, res);
     }
 
-    // Use real Google Vision API
     console.log('Analyzing image with Google Vision API...');
     
     try {
