@@ -1,16 +1,23 @@
-# Frontend Dockerfile
+# Frontend Dockerfile  
 FROM node:18-alpine AS build
 
 WORKDIR /app
 
-# Copy package files first
+# Copy package files
 COPY package*.json ./
 
-# Install dependencies (using install instead of ci for flexibility)
-RUN npm install --production=false
+# Install all dependencies including dev dependencies for build
+RUN npm install
 
-# Copy all frontend source files
-COPY . ./
+# Copy configuration files
+COPY tailwind.config.js postcss.config.js ./
+
+# Copy source directories
+COPY public/ ./public/
+COPY src/ ./src/
+
+# Verify required files exist
+RUN test -f public/index.html || (echo "ERROR: public/index.html not found" && ls -la public/ && exit 1)
 
 # Build the app
 RUN npm run build
