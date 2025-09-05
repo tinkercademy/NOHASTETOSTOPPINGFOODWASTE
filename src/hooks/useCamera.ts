@@ -114,6 +114,8 @@ export const useCamera = () => {
       console.log('Camera stream active:', stream.getVideoTracks().length, 'video tracks');
       console.log('Video track settings:', stream.getVideoTracks()[0]?.getSettings());
       
+      // Set state to active even if video element isn't ready yet
+      // The video element will pick up the stream when it mounts
       setCameraState({
         isActive: true,
         isLoading: false,
@@ -226,6 +228,31 @@ export const useCamera = () => {
         reject(new Error('Failed to draw video frame'));
       }
     });
+  }, [cameraState.isActive]);
+
+  // Assign stream to video element when both are available
+  useEffect(() => {
+    if (videoRef.current && streamRef.current && cameraState.isActive) {
+      const video = videoRef.current;
+      const stream = streamRef.current;
+      
+      console.log('Assigning stream to video element (via effect)');
+      video.srcObject = stream;
+      
+      const playPromise = video.play();
+      if (playPromise) {
+        playPromise
+          .then(() => {
+            console.log('Video playback started via effect');
+            setTimeout(() => {
+              console.log('Video dimensions via effect:', video.videoWidth, 'x', video.videoHeight);
+            }, 500);
+          })
+          .catch(error => {
+            console.error('Video playback failed via effect:', error);
+          });
+      }
+    }
   }, [cameraState.isActive]);
 
   // Cleanup on unmount
