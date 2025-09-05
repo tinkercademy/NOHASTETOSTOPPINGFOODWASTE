@@ -1,7 +1,11 @@
 import axios from 'axios';
 import { FoodItem, Category, UPCResponse } from '../types';
 
-const API_BASE_URL = 'http://localhost:3002/api';
+// In production, API calls go through Nginx proxy (/api/*)
+// In development, direct to localhost backend
+const API_BASE_URL = process.env.NODE_ENV === 'production' 
+  ? '/api'  // Relative URL - goes through Nginx proxy
+  : 'http://localhost:3002/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
