@@ -30,37 +30,51 @@ A mobile-optimized web application for tracking food expiration dates and reduci
 ## Getting Started
 
 ### Prerequisites
-- Node.js (v16 or higher)
-- npm
+- Docker and Docker Compose
+- (Optional) Node.js for development
 
-### Installation
+### Quick Start with Docker
 
-1. **Install frontend dependencies:**
+1. **Deploy the application:**
+```bash
+./deploy.sh
+```
+
+2. **View logs:**
+```bash
+./logs.sh
+```
+
+3. **Stop the application:**
+```bash
+./stop.sh
+```
+
+### Alternative: Manual Docker Commands
+
+```bash
+# Build and start
+docker compose up --build -d
+
+# View logs
+docker compose logs -f
+
+# Stop
+docker compose down
+```
+
+### Development Setup
+
+1. **Install dependencies:**
 ```bash
 npm install
+cd server && npm install && cd ..
 ```
 
-2. **Install backend dependencies:**
+2. **Start development servers:**
 ```bash
-cd server
-npm install
-cd ..
+npm run dev
 ```
-
-### Running the Application
-
-1. **Start the backend server:**
-```bash
-cd server
-npm start
-```
-Server runs on http://localhost:3002
-
-2. **Start the frontend (in a new terminal):**
-```bash
-npm start
-```
-Frontend runs on http://localhost:3000
 
 ## API Endpoints
 
