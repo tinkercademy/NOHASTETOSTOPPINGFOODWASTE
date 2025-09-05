@@ -52,22 +52,9 @@ export const BarcodeScanner: React.FC = () => {
   };
 
   const handleBarcodeDetection = async (barcode: string) => {
-    try {
-      const upcData = await foodApi.lookupUPC(barcode);
-      // Navigate to add item page with pre-filled data
-      navigate('/add', { 
-        state: { 
-          name: upcData.name,
-          category: upcData.category,
-          expirationDate: getSuggestedExpirationDate(upcData.category)
-            .toISOString().split('T')[0]
-        }
-      });
-    } catch (error) {
-      console.error('UPC lookup failed:', error);
-      // Still navigate to add item page but let user fill manually
-      navigate('/add');
-    }
+    // Don't automatically navigate - let user see the barcode first
+    // They can manually proceed to add item if desired
+    console.log('Barcode detected:', barcode);
   };
 
   const handleReceiptDetection = async (items: any[]) => {
@@ -182,11 +169,28 @@ export const BarcodeScanner: React.FC = () => {
             {result.type === 'barcode' && (
               <div className="text-center">
                 <div className="text-green-600 text-xl mb-2">✅ Barcode Detected!</div>
-                <p className="font-mono text-lg mb-2">{result.barcode}</p>
-                <p className="text-sm text-gray-600 mb-3">
+                <p className="font-mono text-lg mb-2 bg-gray-100 p-2 rounded">
+                  {result.barcode}
+                </p>
+                <p className="text-sm text-gray-600 mb-4">
                   Confidence: {Math.round(result.confidence * 100)}%
                 </p>
-                <p className="text-sm">Redirecting to add item...</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => navigate('/add', { 
+                      state: { upcCode: result.barcode }
+                    })}
+                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+                  >
+                    Add Item
+                  </button>
+                  <button
+                    onClick={resetScan}
+                    className="flex-1 px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
+                  >
+                    Scan Again
+                  </button>
+                </div>
               </div>
             )}
             

@@ -57,7 +57,10 @@ temp/
 
 # Service account keys (Google Cloud, etc.)
 service-account-key.json
+google-service-account.json
+*service-account*.json
 *.json.key
+credentials.json
 
 # React Scripts generated files
 .eslintcache

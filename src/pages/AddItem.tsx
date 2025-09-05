@@ -86,13 +86,13 @@ export const AddItem: React.FC = () => {
   // Pre-fill form with data from barcode scan
   useEffect(() => {
     if (location.state) {
-      const { name, category, expirationDate } = location.state as any;
+      const { name, category, expirationDate, upcCode } = location.state as any;
       setFormData(prev => ({
         ...prev,
         name: name || prev.name,
         category: category || prev.category,
         expirationDate: expirationDate || prev.expirationDate,
-        description: name ? 'From barcode scan' : prev.description
+        description: name ? 'From barcode scan' : upcCode ? `Scanned barcode: ${upcCode}` : prev.description
       }));
     }
   }, [location.state]);

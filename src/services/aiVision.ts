@@ -74,6 +74,38 @@ const mockReceiptItems = [
   }
 ];
 
+// Compress and convert image to base64
+const compressAndConvertImage = (file: File, maxWidth: number = 800, quality: number = 0.8): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    
+    img.onload = () => {
+      // Calculate new dimensions
+      const ratio = Math.min(maxWidth / img.width, maxWidth / img.height);
+      const newWidth = img.width * ratio;
+      const newHeight = img.height * ratio;
+      
+      // Set canvas size
+      canvas.width = newWidth;
+      canvas.height = newHeight;
+      
+      // Draw and compress image
+      ctx?.drawImage(img, 0, 0, newWidth, newHeight);
+      
+      // Convert to base64 with compression
+      const compressedBase64 = canvas.toDataURL('image/jpeg', quality);
+      resolve(compressedBase64);
+    };
+    
+    img.onerror = () => reject(new Error('Failed to load image'));
+    
+    // Create object URL for the image
+    img.src = URL.createObjectURL(file);
+  });
+};
+
 // Convert image to base64 (for demo purposes)
 const imageToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -84,71 +116,42 @@ const imageToBase64 = (file: File): Promise<string> => {
   });
 };
 
-// Real Google Vision API implementation
-const GOOGLE_VISION_API_KEY = process.env.REACT_APP_GOOGLE_VISION_API_KEY;
+// For Google Vision API, we need to use a backend proxy due to authentication requirements
+// Frontend cannot directly use service account auth, so we'll use a simpler approach
 
 export const analyzeImage = async (imageFile: File): Promise<VisionResult> => {
   try {
-    const base64Image = await imageToBase64(imageFile);
-    const imageData = base64Image.split(',')[1]; // Remove data:image/jpeg;base64, prefix
+    console.log('Analyzing image via backend...');
+    console.log('Original image file:', imageFile.name, imageFile.size, 'bytes');
 
-    // Use Google Vision API
-    const response = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_API_KEY}`, {
+    // Compress image before sending to reduce payload size
+    const compressedBase64 = await compressAndConvertImage(imageFile, 800, 0.7);
+    console.log('Compressed image size:', Math.round(compressedBase64.length / 1024), 'KB');
+    
+    // Send to our backend instead of directly to Google
+    const response = await fetch('http://localhost:3002/api/analyze-image', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        requests: [
-          {
-            image: {
-              content: imageData
-            },
-            features: [
-              { type: 'TEXT_DETECTION', maxResults: 50 },
-              { type: 'LOGO_DETECTION', maxResults: 10 }
-            ]
-          }
-        ]
+        imageData: compressedBase64
       })
     });
 
     if (!response.ok) {
-      throw new Error(`Vision API error: ${response.statusText}`);
+      throw new Error(`Backend error: ${response.statusText}`);
     }
 
     const result = await response.json();
-    const annotations = result.responses[0];
-
-    // Check for barcodes first
-    const barcodeResult = detectBarcode(annotations);
-    if (barcodeResult) {
-      return barcodeResult;
-    }
-
-    // Check for receipt
-    const receiptResult = detectReceipt(annotations);
-    if (receiptResult) {
-      return receiptResult;
-    }
-
-    return {
-      type: 'none',
-      message: 'No barcode or receipt detected. Please try again with better lighting or positioning.'
-    };
-
+    return result;
+    
   } catch (error) {
     console.error('Error analyzing image:', error);
     
-    // Fallback to mock data in development
-    if (process.env.NODE_ENV === 'development') {
-      console.warn('Falling back to mock data for development');
-      return await analyzImageMock(imageFile);
-    }
-    
     return {
       type: 'none',
-      message: 'Error processing image. Please check your internet connection and try again.'
+      message: 'Error connecting to vision service. Please check your connection and try again.'
     };
   }
 };
