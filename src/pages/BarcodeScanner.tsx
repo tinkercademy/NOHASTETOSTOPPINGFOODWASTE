@@ -126,7 +126,6 @@ export const BarcodeScanner: React.FC = () => {
                 autoPlay
                 controls={false}
                 style={{
-                  transform: 'scaleX(-1)', // Mirror the video for better UX
                   maxWidth: '100%',
                   height: '256px'
                 }}
