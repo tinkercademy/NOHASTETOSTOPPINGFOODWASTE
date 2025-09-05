@@ -22,16 +22,6 @@ export const useCamera = () => {
   const startCamera = useCallback(async () => {
     setCameraState(prev => ({ ...prev, isLoading: true, error: null }));
 
-    // Check if we're in a secure context (HTTPS)
-    if (!window.isSecureContext && window.location.protocol !== 'https:') {
-      setCameraState({
-        isActive: false,
-        isLoading: false,
-        error: 'Camera requires HTTPS on mobile devices. Please access the app via HTTPS.',
-        hasPermission: false
-      });
-      return;
-    }
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({

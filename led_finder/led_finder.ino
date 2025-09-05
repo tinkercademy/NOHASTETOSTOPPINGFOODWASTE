@@ -1,5 +1,5 @@
 /*
- * ESP32-C3 LED Pin Finder
+ * ESP32-C3 LED Pin Finder (Watchdog Fix)
  *
  * This sketch will blink a series of common LED pins one by one.
  * Watch the built-in LED on your board. When it blinks, check the
@@ -33,5 +33,8 @@ void loop() {
     // Turn the LED off
     digitalWrite(pin, LOW);
     delay(500); // Short pause before the next pin
+
+    // Add yield() to prevent the watchdog timer from rebooting the chip.
+    yield();
   }
 }
