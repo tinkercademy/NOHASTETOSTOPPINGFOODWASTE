@@ -22,6 +22,17 @@ export const useCamera = () => {
   const startCamera = useCallback(async () => {
     setCameraState(prev => ({ ...prev, isLoading: true, error: null }));
 
+    // Check if we're in a secure context (HTTPS)
+    if (!window.isSecureContext && window.location.protocol !== 'https:') {
+      setCameraState({
+        isActive: false,
+        isLoading: false,
+        error: 'Camera requires HTTPS on mobile devices. Please access the app via HTTPS.',
+        hasPermission: false
+      });
+      return;
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -34,10 +45,27 @@ export const useCamera = () => {
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play();
+        
+        // Wait for video to be ready before marking as active
+        const video = videoRef.current;
+        const playPromise = video.play();
+        
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              console.log('Video playback started successfully');
+              console.log('Video dimensions:', video.videoWidth, 'x', video.videoHeight);
+            })
+            .catch(error => {
+              console.error('Video playback failed:', error);
+            });
+        }
       }
 
       streamRef.current = stream;
+      console.log('Camera stream active:', stream.getVideoTracks().length, 'video tracks');
+      console.log('Video track settings:', stream.getVideoTracks()[0]?.getSettings());
+      
       setCameraState({
         isActive: true,
         isLoading: false,

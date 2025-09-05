@@ -25,10 +25,15 @@ services:
     container_name: food-tracker-frontend
     ports:
       - "80:80"
+      - "443:443"
     depends_on:
       - backend
+    volumes:
+      # Mount SSL certificates (uncomment and update paths as needed)
+      # - ./ssl/certificate.crt:/etc/ssl/certs/certificate.crt:ro
+      # - ./ssl/private.key:/etc/ssl/private/private.key:ro
     environment:
-      - REACT_APP_API_URL=https://nohaste.dev.tk.sg
+      - NODE_ENV=production
     env_file:
       - .env.production
     networks:

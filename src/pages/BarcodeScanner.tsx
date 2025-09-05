@@ -120,10 +120,26 @@ export const BarcodeScanner: React.FC = () => {
             <div className="relative">
               <video
                 ref={videoRef}
-                className="w-full h-64 object-cover border-2 border-black"
+                className="w-full h-64 object-cover border-2 border-black bg-black"
                 playsInline
                 muted
+                autoPlay
+                style={{
+                  transform: 'scaleX(-1)', // Mirror the video for better UX
+                }}
+                onLoadedMetadata={() => {
+                  console.log('Video metadata loaded, dimensions:', 
+                    videoRef.current?.videoWidth, 'x', videoRef.current?.videoHeight);
+                }}
+                onError={(e) => {
+                  console.error('Video error:', e);
+                }}
               />
+              
+              {/* Debug info overlay */}
+              <div className="absolute top-2 left-2 bg-black bg-opacity-50 text-white text-xs p-1 rounded">
+                {videoRef.current?.videoWidth || 0}x{videoRef.current?.videoHeight || 0}
+              </div>
               
               {/* Scanning overlay */}
               <div className="absolute inset-0 border-2 border-green-500 pointer-events-none">
