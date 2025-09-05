@@ -128,8 +128,14 @@ export const analyzeImage = async (imageFile: File): Promise<VisionResult> => {
     const compressedBase64 = await compressAndConvertImage(imageFile, 800, 0.7);
     console.log('Compressed image size:', Math.round(compressedBase64.length / 1024), 'KB');
     
-    // Send to our backend instead of directly to Google
-    const response = await fetch('http://localhost:3002/api/analyze-image', {
+    // Send to our backend (use relative URL in production, localhost in dev)
+    const apiUrl = process.env.NODE_ENV === 'production' 
+      ? '/api/analyze-image'  // Goes through Nginx proxy
+      : 'http://localhost:3002/api/analyze-image';
+      
+    console.log('Sending image to:', apiUrl);
+    
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
