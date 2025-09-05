@@ -8,6 +8,20 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
+# Check if we're in the right directory
+if [ ! -f "docker-compose.yml" ]; then
+    echo "❌ docker-compose.yml not found. Please run from project root directory."
+    exit 1
+fi
+
+# Check required directories exist
+if [ ! -d "src" ] || [ ! -d "public" ] || [ ! -d "server" ]; then
+    echo "❌ Required directories (src, public, server) not found."
+    echo "   Current directory: $(pwd)"
+    echo "   Contents: $(ls -la)"
+    exit 1
+fi
+
 # Check if service account file exists
 if [ ! -f "server/google-service-account.json" ]; then
     echo "⚠️  Warning: Google service account file not found at server/google-service-account.json"

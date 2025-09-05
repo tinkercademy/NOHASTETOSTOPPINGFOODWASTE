@@ -3,15 +3,14 @@ FROM node:18-alpine AS build
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files first
 COPY package*.json ./
-RUN npm ci
 
-# Copy source code and config files
-COPY public/ ./public/
-COPY src/ ./src/
-COPY tailwind.config.js ./
-COPY postcss.config.js ./
+# Install dependencies (using install instead of ci for flexibility)
+RUN npm install --production=false
+
+# Copy all frontend source files
+COPY . ./
 
 # Build the app
 RUN npm run build
