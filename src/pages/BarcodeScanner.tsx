@@ -124,15 +124,27 @@ export const BarcodeScanner: React.FC = () => {
                 playsInline
                 muted
                 autoPlay
+                controls={false}
                 style={{
                   transform: 'scaleX(-1)', // Mirror the video for better UX
+                  maxWidth: '100%',
+                  height: '256px'
                 }}
                 onLoadedMetadata={() => {
                   console.log('Video metadata loaded, dimensions:', 
                     videoRef.current?.videoWidth, 'x', videoRef.current?.videoHeight);
                 }}
+                onCanPlay={() => {
+                  console.log('Video can play');
+                }}
+                onPlaying={() => {
+                  console.log('Video is playing');
+                }}
                 onError={(e) => {
                   console.error('Video error:', e);
+                }}
+                onLoadStart={() => {
+                  console.log('Video load started');
                 }}
               />
               
