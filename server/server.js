@@ -412,16 +412,18 @@ app.post('/api/analyze-image', async (req, res) => {
       console.log('Detected text:', fullText.substring(0, 200) + '...');
       
       // Check for receipt patterns FIRST (receipts often contain barcode-like numbers)
+      console.log('🔍 Checking if text is a receipt...');
       const receiptResult = await detectReceiptInTextWithLLM(fullText);
-      if (receiptResult) {
-        console.log('Identified as receipt');
+      if (receiptResult && receiptResult.items && receiptResult.items.length > 0) {
+        console.log('🧾 Identified as receipt with', receiptResult.items.length, 'items');
         return res.json(receiptResult);
       }
-      
+
+      console.log('📦 Not a receipt, checking for standalone barcodes...');
       // Only check for standalone barcodes if no receipt detected
       const barcodeResult = detectBarcodeInText(fullText);
       if (barcodeResult) {
-        console.log('Identified as barcode, looking up product...');
+        console.log('🔍 Identified as barcode, looking up product...');
 
         // Try to find product in database
         const productResult = await lookupProductByBarcode(barcodeResult.barcode);
@@ -741,7 +743,7 @@ async function detectReceiptInTextWithLLM(text) {
   const lines = text.split('\n').map(line => line.trim()).filter(line => line);
   const lowerText = text.toLowerCase();
 
-  // Strong receipt indicators
+  // Strong receipt indicators (very specific to avoid barcode confusion)
   const strongReceiptIndicators = [
     'receipt', 'total', 'subtotal', 'tax', 'thank you', 'store',
     'cashier', 'register', 'transaction', 'purchase', 'sale',
@@ -756,10 +758,19 @@ async function detectReceiptInTextWithLLM(text) {
   // Look for price patterns which are common in receipts
   const pricePattern = /\$\d+\.\d{2}/g;
   const priceMatches = text.match(pricePattern);
-  const hasPrices = priceMatches && priceMatches.length >= 2; // At least 2 prices
+  const hasPrices = priceMatches && priceMatches.length >= 3; // At least 3 prices for receipts
 
-  // Must have either strong indicator OR multiple prices
-  if (!hasStrongIndicator && !hasPrices) {
+  // Additional receipt indicators - look for common receipt line items
+  const hasReceiptLines = lines.some(line =>
+    (line.match(/\d+\.\d{2}$/) && line.length > 10) || // Lines ending in prices
+    lowerText.includes('qty') ||
+    lowerText.includes('description') ||
+    lowerText.includes('amount')
+  );
+
+  // Must have strong indicator AND either multiple prices OR receipt lines
+  // This is stricter to avoid confusing barcode labels with receipts
+  if (!hasStrongIndicator || (!hasPrices && !hasReceiptLines)) {
     return null;
   }
 
