@@ -25,7 +25,18 @@ fi
 # Check if service account file exists
 if [ ! -f "server/google-service-account.json" ]; then
     echo "⚠️  Warning: Google service account file not found at server/google-service-account.json"
-    echo "   Vision API will use mock data instead of real AI"
+    echo "   Vision API will use service account fallback"
+fi
+
+# Check if API keys are configured
+if ! grep -q "GOOGLE_GEMINI_API_KEY=" .env.production || grep -q "your_gemini_api_key_here" .env.production; then
+    echo "⚠️  Warning: GOOGLE_GEMINI_API_KEY not configured in .env.production"
+    echo "   Add your Gemini API key to .env.production for receipt parsing"
+fi
+
+if ! grep -q "REACT_APP_GOOGLE_VISION_API_KEY=" .env.production || grep -q "your_vision_api_key_here" .env.production; then
+    echo "⚠️  Warning: REACT_APP_GOOGLE_VISION_API_KEY not configured in .env.production"
+    echo "   Add your Vision API key to .env.production for barcode scanning"
 fi
 
 # Create data directory for database persistence

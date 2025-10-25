@@ -1,0 +1,60 @@
+# Staging Environment - Local Docker deployment that mimics production
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: food-tracker-backend-staging
+    ports:
+      - "3002:3002"
+    volumes:
+      # Mount database directory for persistence
+      - ./data-staging:/app/data
+      # Mount Google service account key
+      - ./server/google-service-account.json:/app/google-service-account.json:ro
+    environment:
+      - NODE_ENV=staging
+      - PORT=3002
+      # Google API Keys (pass from host environment)
+      - GOOGLE_GEMINI_API_KEY=${GOOGLE_GEMINI_API_KEY}
+      - REACT_APP_GOOGLE_VISION_API_KEY=${REACT_APP_GOOGLE_VISION_API_KEY}
+    env_file:
+      - .env.staging
+    networks:
+      - food-tracker-staging-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3002/api/categories"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        - REACT_APP_API_URL=http://localhost:3002
+        - REACT_APP_ENV=staging
+    container_name: food-tracker-frontend-staging
+    ports:
+      - "3001:80"  # Use port 3001 to avoid conflicts with dev server
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=staging
+      - REACT_APP_API_URL=http://localhost:3002
+      - REACT_APP_ENV=staging
+    networks:
+      - food-tracker-staging-network
+    restart: unless-stopped
+
+networks:
+  food-tracker-staging-network:
+    driver: bridge
+
+volumes:
+  database-staging:
+    driver: local

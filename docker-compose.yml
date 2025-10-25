@@ -14,6 +14,11 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3002
+      # Google API Keys (pass from host environment or .env.production)
+      - GOOGLE_GEMINI_API_KEY=${GOOGLE_GEMINI_API_KEY}
+      - REACT_APP_GOOGLE_VISION_API_KEY=${REACT_APP_GOOGLE_VISION_API_KEY}
+    env_file:
+      - .env.production
     networks:
       - food-tracker-network
     restart: unless-stopped

@@ -30,157 +30,287 @@ function calculateDaysLeft(expirationDate) {
 
 // Get all food items
 app.get('/api/items', (req, res) => {
-  db.all(`
-    SELECT id, name, description, category, expiration_date, added_date, upc_code, quantity, unit,
-           CAST((julianday(expiration_date) - julianday('now')) AS INTEGER) as days_left
-    FROM food_items 
-    ORDER BY days_left ASC
-  `, (err, rows) => {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
-    }
+  try {
+    const rows = db.prepare(`
+      SELECT id, name, description, category, expiration_date, added_date, upc_code, quantity, unit,
+             CAST((julianday(expiration_date) - julianday('now')) AS INTEGER) as days_left
+      FROM food_items
+      ORDER BY days_left ASC
+    `).all();
     res.json(rows);
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Add new food item
 app.post('/api/items', (req, res) => {
-  const { name, description, category, expirationDate, upcCode, quantity = 1, unit = 'item' } = req.body;
-  
-  db.run(`
-    INSERT INTO food_items (name, description, category, expiration_date, upc_code, quantity, unit)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `, [name, description, category, expirationDate, upcCode, quantity, unit], function(err) {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
-    }
-    res.json({ id: this.lastID, message: 'Item added successfully' });
-  });
+  try {
+    const { name, description, category, expirationDate, upcCode, quantity = 1, unit = 'item' } = req.body;
+
+    const result = db.prepare(`
+      INSERT INTO food_items (name, description, category, expiration_date, upc_code, quantity, unit)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(name, description, category, expirationDate, upcCode, quantity, unit);
+
+    res.json({ id: result.lastInsertRowid, message: 'Item added successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Update item quantity
 app.patch('/api/items/:id/quantity', (req, res) => {
-  const { quantity } = req.body;
-  const id = req.params.id;
+  try {
+    const { quantity } = req.body;
+    const id = req.params.id;
 
-  if (quantity <= 0) {
-    // Delete item if quantity is 0 or less
-    db.run('DELETE FROM food_items WHERE id = ?', id, function(err) {
-      if (err) {
-        res.status(500).json({ error: err.message });
-        return;
-      }
+    if (quantity <= 0) {
+      // Delete item if quantity is 0 or less
+      db.prepare('DELETE FROM food_items WHERE id = ?').run(id);
       res.json({ message: 'Item deleted (quantity reached 0)' });
-    });
-  } else {
-    // Update quantity
-    db.run('UPDATE food_items SET quantity = ? WHERE id = ?', [quantity, id], function(err) {
-      if (err) {
-        res.status(500).json({ error: err.message });
-        return;
-      }
+    } else {
+      // Update quantity
+      db.prepare('UPDATE food_items SET quantity = ? WHERE id = ?').run(quantity, id);
       res.json({ message: 'Quantity updated successfully' });
-    });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
 // Delete food item
 app.delete('/api/items/:id', (req, res) => {
-  db.run('DELETE FROM food_items WHERE id = ?', req.params.id, function(err) {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
-    }
+  try {
+    db.prepare('DELETE FROM food_items WHERE id = ?').run(req.params.id);
     res.json({ message: 'Item deleted successfully' });
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // UPC lookup
 app.get('/api/upc/:code', (req, res) => {
-  const upcCode = req.params.code.replace(/\s/g, ''); // Remove spaces
-  
-  db.get('SELECT * FROM upc_lookup WHERE upc_code = ?', [req.params.code], (err, row) => {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
-    }
+  try {
+    const upcCode = req.params.code.replace(/\s/g, ''); // Remove spaces
+
+    const row = db.prepare('SELECT * FROM products WHERE upc_code = ?').get(upcCode);
     if (row) {
       res.json(row);
     } else {
       res.status(404).json({ error: 'UPC code not found' });
     }
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Get categories with counts
 app.get('/api/categories', (req, res) => {
-  db.all(`
-    SELECT category, COUNT(*) as count
-    FROM food_items 
-    WHERE CAST((julianday(expiration_date) - julianday('now')) AS INTEGER) > 0
-    GROUP BY category
-    ORDER BY category
-  `, (err, rows) => {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
-    }
+  try {
+    const rows = db.prepare(`
+      SELECT category, COUNT(*) as count
+      FROM food_items
+      WHERE CAST((julianday(expiration_date) - julianday('now')) AS INTEGER) > 0
+      GROUP BY category
+      ORDER BY category
+    `).all();
     res.json(rows);
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // API endpoint for microcontroller - get items expiring soon
 app.get('/api/microcontroller/expiring', (req, res) => {
-  const daysThreshold = req.query.days || 7;
-  
-  db.all(`
-    SELECT name, category,
-           CAST((julianday(expiration_date) - julianday('now')) AS INTEGER) as days_left
-    FROM food_items 
-    WHERE CAST((julianday(expiration_date) - julianday('now')) AS INTEGER) <= ?
-      AND CAST((julianday(expiration_date) - julianday('now')) AS INTEGER) >= 0
-    ORDER BY days_left ASC
-    LIMIT 10
-  `, [daysThreshold], (err, rows) => {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
-    }
+  try {
+    const daysThreshold = req.query.days || 7;
+
+    const rows = db.prepare(`
+      SELECT name, category,
+             CAST((julianday(expiration_date) - julianday('now')) AS INTEGER) as days_left
+      FROM food_items
+      WHERE CAST((julianday(expiration_date) - julianday('now')) AS INTEGER) <= ?
+        AND CAST((julianday(expiration_date) - julianday('now')) AS INTEGER) >= 0
+      ORDER BY days_left ASC
+      LIMIT 10
+    `).all(daysThreshold);
+
     res.json({
       count: rows.length,
       items: rows
     });
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Food expiration lookup (for estimating expiration dates)
 app.get('/api/food-expiration/:name', (req, res) => {
-  const foodName = req.params.name.toLowerCase();
-  
-  db.get(`
-    SELECT * FROM food_expiration 
-    WHERE LOWER(food_name) LIKE ? 
-    ORDER BY LENGTH(food_name) ASC
-    LIMIT 1
-  `, [`%${foodName}%`], (err, row) => {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
-    }
+  try {
+    const foodName = req.params.name.toLowerCase();
+
+    const row = db.prepare(`
+      SELECT * FROM food_expiration
+      WHERE LOWER(food_name) LIKE ?
+      ORDER BY LENGTH(food_name) ASC
+      LIMIT 1
+    `).get(`%${foodName}%`);
+
     if (row) {
       res.json(row);
     } else {
       // Default expiration if not found
-      res.json({ 
-        food_name: foodName, 
-        category: 'Other', 
-        shelf_life_days: 7, 
-        storage_type: 'pantry' 
+      res.json({
+        food_name: foodName,
+        category: 'Other',
+        shelf_life_days: 7,
+        storage_type: 'pantry'
       });
     }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Product lookup endpoints
+
+// Get product by UPC code
+app.get('/api/products/upc/:upcCode', (req, res) => {
+  try {
+    const { upcCode } = req.params;
+    const cleanUpc = upcCode.replace(/\s/g, ''); // Remove spaces from UPC code
+
+    const product = db.prepare(`
+      SELECT * FROM products
+      WHERE REPLACE(upc_code, ' ', '') = ?
+    `).get(cleanUpc);
+
+    if (product) {
+      console.log(`Found product: ${product.name} for UPC: ${upcCode}`);
+      return res.json({
+        found: true,
+        product: product
+      });
+    } else {
+      console.log(`No product found for UPC: ${upcCode}`);
+      return res.json({
+        found: false,
+        message: 'Product not found in database'
+      });
+    }
+  } catch (err) {
+    console.error('Database error:', err);
+    return res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Search products by name (for fallback matching)
+app.get('/api/products/search/:query', (req, res) => {
+  try {
+    const { query } = req.params;
+    const searchTerms = `%${query.toLowerCase()}%`;
+
+    const products = db.prepare(`
+      SELECT p.*,
+             pa.confidence_score,
+             CASE
+               WHEN LOWER(p.name) LIKE LOWER(?) THEN 1.0
+               WHEN LOWER(p.description) LIKE LOWER(?) THEN 0.9
+               WHEN LOWER(p.brand) LIKE LOWER(?) THEN 0.8
+               ELSE pa.confidence_score
+             END as match_score
+      FROM products p
+      LEFT JOIN product_alternatives pa ON p.upc_code = pa.upc_code
+      WHERE LOWER(p.name) LIKE LOWER(?)
+         OR LOWER(p.description) LIKE LOWER(?)
+         OR LOWER(p.brand) LIKE LOWER(?)
+         OR LOWER(pa.search_terms) LIKE LOWER(?)
+      ORDER BY match_score DESC
+      LIMIT 5
+    `).all(searchTerms, searchTerms, searchTerms, searchTerms, searchTerms, searchTerms, searchTerms);
+
+    if (products && products.length > 0) {
+      console.log(`Found ${products.length} products matching: ${query}`);
+      return res.json({
+        found: true,
+        products: products,
+        query: query
+      });
+    } else {
+      console.log(`No products found matching: ${query}`);
+      return res.json({
+        found: false,
+        message: 'No matching products found'
+      });
+    }
+  } catch (err) {
+    console.error('Database error:', err);
+    return res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Add new product to database
+app.post('/api/products', (req, res) => {
+  const {
+    upcCode,
+    name,
+    description,
+    category,
+    brand,
+    size,
+    unit,
+    shelfLifeDays,
+    storageType,
+    typicalQuantity
+  } = req.body;
+
+  if (!upcCode || !name || !category || !shelfLifeDays) {
+    return res.status(400).json({
+      error: 'Missing required fields: upcCode, name, category, shelfLifeDays'
+    });
+  }
+
+  try {
+    const result = db.prepare(`
+    INSERT OR REPLACE INTO products (
+      upc_code, name, description, category, brand, size, unit,
+      shelf_life_days, storage_type, typical_quantity, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+  `).run(
+    upcCode, name, description, category, brand, size, unit,
+    shelfLifeDays, storageType || 'pantry', typicalQuantity || 1
+  );
+
+  console.log(`Added new product: ${name} (UPC: ${upcCode})`);
+  res.json({
+    id: result.lastInsertRowid,
+    message: 'Product added successfully',
+    upcCode: upcCode,
+    name: name
   });
+} catch (err) {
+  console.error('Database error:', err);
+  return res.status(500).json({ error: err.message });
+}
+});
+
+// Get all products (for management)
+app.get('/api/products', (req, res) => {
+  try {
+    const products = db.prepare(`
+      SELECT * FROM products
+      ORDER BY category, name
+    `).all();
+
+    res.json({
+      products: products,
+      count: products.length
+    });
+  } catch (err) {
+    console.error('Database error:', err);
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 // Initialize Vision client with better error handling
@@ -263,8 +393,20 @@ app.post('/api/analyze-image', async (req, res) => {
       // Only check for standalone barcodes if no receipt detected
       const barcodeResult = detectBarcodeInText(fullText);
       if (barcodeResult) {
-        console.log('Identified as barcode');
-        return res.json(barcodeResult);
+        console.log('Identified as barcode, looking up product...');
+
+        // Try to find product in database
+        const productResult = await lookupProductByBarcode(barcodeResult.barcode);
+        if (productResult) {
+          return res.json(productResult);
+        } else {
+          // Return basic barcode info if product not found
+          return res.json({
+            ...barcodeResult,
+            message: 'Barcode detected but product not found in database',
+            suggestion: 'You can add this product manually'
+          });
+        }
       }
       
       // Nothing found
@@ -353,6 +495,39 @@ function detectBarcodeInText(text) {
   return null;
 }
 
+/**
+ * Look up product information by barcode code
+ *
+ * @param {string} barcode - The barcode to look up
+ * @returns {Object|null} - Product information or null if not found
+ */
+async function lookupProductByBarcode(barcode) {
+  try {
+    const cleanBarcode = barcode.replace(/\s/g, '');
+
+    const product = db.prepare(`
+      SELECT * FROM products
+      WHERE REPLACE(upc_code, ' ', '') = ?
+    `).get(cleanBarcode);
+
+    if (product) {
+      console.log(`Found product in database: ${product.name}`);
+      return {
+        type: 'product',
+        barcode: barcode,
+        product: product,
+        confidence: 0.95
+      };
+    } else {
+      console.log(`Product not found in database for barcode: ${barcode}`);
+      return null;
+    }
+  } catch (err) {
+    console.error('Database lookup error:', err);
+    return null;
+  }
+}
+
 
 /**
  * Extract food items from receipt text using Google Gemini AI
@@ -375,28 +550,58 @@ async function extractReceiptItemsWithGemini(text) {
     const model = geminiClient.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     const prompt = `
-Extract food items from this receipt text. Return ONLY a JSON array of objects with this exact structure:
+Extract ONLY FOOD AND GROCERY items from this receipt text. Ignore all non-food items completely.
+
+Return ONLY a JSON array of objects with this exact structure:
 [
   {
     "name": "item name",
     "quantity": number,
     "unit": "item" | "kg" | "g" | "lbs" | "oz" | "L" | "mL",
     "price": number,
-    "category": "Bakery" | "Dairy" | "Fruits" | "Vegetables" | "Meat" | "Drinks" | "Grains" | "Frozen" | "Other"
+    "category": "Produce" | "Dairy" | "Meat" | "Seafood" | "Bakery" | "Pantry" | "Frozen" | "Beverages" | "Snacks" | "Household" | "Personal Care" | "Other"
   }
 ]
 
+FOOD ITEMS TO INCLUDE:
+✅ Fresh fruits and vegetables (apples, bananas, lettuce, tomatoes, etc.)
+✅ Dairy products (milk, cheese, yogurt, butter, eggs)
+✅ Meat and poultry (chicken, beef, pork, turkey)
+✅ Seafood (fish, shrimp, salmon)
+✅ Bakery items (bread, bagels, muffins, pastries)
+✅ Pantry staples (pasta, rice, flour, sugar, oil, spices)
+✅ Canned goods (canned beans, tomatoes, soup)
+✅ Frozen foods (frozen vegetables, meals, ice cream)
+✅ Beverages (juice, soda, water, coffee, tea)
+✅ Snacks (chips, crackers, nuts, granola bars)
+✅ Condiments and sauces (ketchup, mustard, salad dressing)
+✅ Breakfast foods (cereal, oatmeal, pancake mix)
+
+NON-FOOD ITEMS TO EXCLUDE:
+❌ Electronics (batteries, chargers, cables, light bulbs)
+❌ Household supplies (paper towels, toilet paper, cleaning products, detergent)
+❌ Personal care (shampoo, soap, toothpaste, deodorant, cosmetics)
+❌ Health and beauty (vitamins, medicine, first aid)
+❌ Pet supplies (pet food, toys, litter)
+❌ Office supplies (pens, paper, folders)
+❌ Automotive (motor oil, windshield fluid)
+❌ Garden supplies (fertilizer, tools)
+❌ Clothing and accessories
+❌ Gift cards, lottery tickets
+❌ Services (deli, bakery orders)
+❌ Taxes, fees, bag charges
+
 Rules:
-- Only extract food/grocery items (ignore non-food items like electronics, household items, etc.)
+- Be VERY STRICT about only including food items
 - Handle weight-based items (e.g., "0.5 lbs apples" -> quantity: 0.5, unit: "lbs")
 - Parse quantity from item names (e.g., "2 Dozen Eggs" -> quantity: 24, unit: "item")
 - Handle bulk items (e.g., "Bananas @ $0.59/lb" with weight "1.2 lbs" -> quantity: 1.2, unit: "lbs")
-- Infer appropriate category from item name
+- Use the expanded category list above
 - If quantity not specified, default to 1
 - If unit not specified, use "item"
 - If no price found, set to null
-- Item names should be clean and descriptive
-- Handle common receipt formatting variations
+- Clean item names (remove brand names unless essential for identification)
+- If NO food items found, return an empty array []
 
 Receipt Text:
 ${text}
@@ -414,12 +619,14 @@ JSON Response:`;
       try {
         const items = JSON.parse(jsonMatch[0]);
 
-        // Validate and clean up the items
+        // Only accept pure food categories - exclude household and personal care
+        const foodCategories = ['Produce', 'Dairy', 'Meat', 'Seafood', 'Bakery', 'Pantry', 'Frozen', 'Beverages', 'Snacks', 'Other'];
+
         const validItems = items.filter(item =>
           item.name &&
           typeof item.quantity === 'number' &&
           item.unit &&
-          ['Bakery', 'Dairy', 'Fruits', 'Vegetables', 'Meat', 'Drinks', 'Grains', 'Frozen', 'Other'].includes(item.category)
+          foodCategories.includes(item.category)
         );
 
         console.log(`Gemini extracted ${validItems.length} valid items from receipt`);

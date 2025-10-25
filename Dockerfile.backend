@@ -1,13 +1,18 @@
 # Backend Dockerfile
-FROM node:18-alpine
+FROM node:20-alpine
 
 WORKDIR /app
 
-# Install system dependencies for SQLite and Google Cloud Vision
-RUN apk add --no-cache python3 make g++ sqlite
+# Install system dependencies for Google Cloud Vision
+RUN apk add --no-cache python3 make g++
 
 # Copy package files
 COPY server/package*.json ./
+
+# Replace sqlite3 with better-sqlite3 for better Docker compatibility
+RUN npm uninstall sqlite3 && npm install better-sqlite3
+
+# Install dependencies
 RUN npm ci --only=production
 
 # Copy source code
