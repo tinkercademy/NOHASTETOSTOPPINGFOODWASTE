@@ -3,8 +3,8 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install system dependencies for Google Cloud Vision
-RUN apk add --no-cache python3 make g++
+# Install system dependencies for Google Cloud Vision and health checks
+RUN apk add --no-cache python3 make g++ wget
 
 # Copy package files
 COPY server/package*.json ./
