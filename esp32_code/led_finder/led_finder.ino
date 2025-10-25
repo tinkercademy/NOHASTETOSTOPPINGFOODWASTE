@@ -1,13 +1,13 @@
 /*
- * ESP32-C3 LED Pin Finder (Watchdog Fix)
+ * ESP32-C3 LED Pin Finder (Watchdog & Pin Fix)
  *
  * This sketch will blink a series of common LED pins one by one.
  * Watch the built-in LED on your board. When it blinks, check the
  * Serial Monitor to see which GPIO pin is the correct one.
  */
 
-// An array of common pins to test for the built-in LED
-const int pinsToTest[] = {2, 7, 8, 10, 13, 21};
+// An array of common pins to test for the built-in LED. Removed pin 13 which does not exist on ESP32-C3.
+const int pinsToTest[] = {2, 7, 8, 10, 21};
 
 void setup() {
   Serial.begin(115200);

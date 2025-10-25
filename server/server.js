@@ -1,8 +1,16 @@
 // Load environment variables from .env file
 require('dotenv').config();
 
+// Core dependencies
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs');
+
+// Google AI services
+const vision = require('@google-cloud/vision');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+
+// Database
 const db = require('./database');
 
 const app = express();
@@ -175,12 +183,6 @@ app.get('/api/food-expiration/:name', (req, res) => {
   });
 });
 
-// AI Vision endpoint for image analysis
-const vision = require('@google-cloud/vision');
-const { GoogleAuth } = require('google-auth-library');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-const fs = require('fs');
-
 // Initialize Vision client with better error handling
 let visionClient = null;
 
@@ -204,28 +206,19 @@ let geminiClient = null;
 
 async function initializeGeminiClient() {
   try {
-    // Use the same API key as Vision API (bound to service account)
-    const geminiKey = process.env.GOOGLE_GEMINI_API_KEY;
-    const visionKey = process.env.REACT_APP_GOOGLE_VISION_API_KEY;
-    const apiKey = geminiKey || visionKey;
-
-    console.log('Environment variables loaded:');
-    console.log('GOOGLE_GEMINI_API_KEY exists:', !!geminiKey, '(length:', geminiKey?.length || 0, ')');
-    console.log('REACT_APP_GOOGLE_VISION_API_KEY exists:', !!visionKey, '(length:', visionKey?.length || 0, ')');
-    console.log('Using API key from:', geminiKey ? 'GOOGLE_GEMINI_API_KEY' : 'REACT_APP_GOOGLE_VISION_API_KEY');
+    // Use Gemini API key first, then fall back to Vision API key
+    const apiKey = process.env.GOOGLE_GEMINI_API_KEY || process.env.REACT_APP_GOOGLE_VISION_API_KEY;
 
     if (apiKey) {
-      console.log('Initializing Google Gemini AI client with API key...');
-      console.log('API key starts with:', apiKey.substring(0, 10) + '...');
+      console.log('Initializing Google Gemini AI client...');
       geminiClient = new GoogleGenerativeAI(apiKey);
       console.log('Google Gemini AI client initialized successfully');
     } else {
-      console.log('No Google API key found - will use regex parsing as fallback');
-      console.log('Note: Set REACT_APP_GOOGLE_VISION_API_KEY or GOOGLE_GEMINI_API_KEY');
+      console.log('No Google API key found - Gemini AI disabled');
+      console.log('Set GOOGLE_GEMINI_API_KEY or REACT_APP_GOOGLE_VISION_API_KEY');
     }
   } catch (error) {
     console.error('Error initializing Google Gemini client:', error);
-    console.log('Will fall back to regex parsing');
   }
 }
 
@@ -360,94 +353,21 @@ function detectBarcodeInText(text) {
   return null;
 }
 
-// Helper function for receipt detection
-function detectReceiptInText(text) {
-  if (!text) return null;
-  
-  const lines = text.split('\n').map(line => line.trim()).filter(line => line);
-  const lowerText = text.toLowerCase();
-  
-  // Strong receipt indicators
-  const strongReceiptIndicators = [
-    'receipt', 'total', 'subtotal', 'tax', 'thank you', 'store', 
-    'cashier', 'register', 'transaction', 'purchase', 'sale',
-    'change due', 'amount tendered', 'visa', 'mastercard', 'debit'
-  ];
-  
-  // Must have at least one strong indicator
-  const hasStrongIndicator = strongReceiptIndicators.some(indicator => 
-    lowerText.includes(indicator)
-  );
 
-  // Look for price patterns which are common in receipts
-  const pricePattern = /\$\d+\.\d{2}/g;
-  const priceMatches = text.match(pricePattern);
-  const hasPrices = priceMatches && priceMatches.length >= 2; // At least 2 prices
-
-  // Must have either strong indicator OR multiple prices
-  if (!hasStrongIndicator && !hasPrices) {
+/**
+ * Extract food items from receipt text using Google Gemini AI
+ *
+ * @param {string} text - OCR text extracted from receipt image
+ * @returns {Array|null} - Array of structured food items or null if extraction fails
+ */
+async function extractReceiptItemsWithGemini(text) {
+  if (!geminiClient) {
+    console.log('Gemini client not available');
     return null;
   }
 
-  console.log('Receipt detection - Strong indicator:', hasStrongIndicator, 'Prices found:', priceMatches?.length || 0);
-
-  const items = [];
-  for (const line of lines) {
-    const item = parseReceiptLine(line);
-    if (item) items.push(item);
-  }
-
-  // Need at least 1 item to be considered a receipt
-  if (items.length === 0) return null;
-
-  console.log('Extracted', items.length, 'items from receipt');
-  return {
-    type: 'receipt',
-    items: items,
-    confidence: 0.8
-  };
-}
-
-// Helper function to parse receipt lines
-function parseReceiptLine(line) {
-  const skipPatterns = [
-    /^(subtotal|total|tax|change|cash|credit|debit)/i,
-    /^\$?\d+\.\d{2}$/,
-    /^thank you/i,
-    /^store #/i,
-    /^\d+\/\d+\/\d+/,
-    /^\d+:\d+/
-  ];
-
-  for (const pattern of skipPatterns) {
-    if (pattern.test(line.trim())) return null;
-  }
-
-  const itemPattern = /^(\d+\s+)?(.+?)\s+\$?(\d+\.\d{2})$/;
-  const match = line.match(itemPattern);
-
-  if (match) {
-    const quantity = match[1] ? parseInt(match[1].trim()) : 1;
-    const itemName = match[2].trim();
-    const price = parseFloat(match[3]);
-
-    if (itemName.length < 3 || /^\d+$/.test(itemName)) return null;
-
-    return {
-      name: titleCase(itemName),
-      quantity: quantity,
-      unit: 'item',
-      category: categorizeItem(itemName),
-      price: price
-    };
-  }
-  return null;
-}
-
-// LLM-based receipt parsing using Google Gemini AI
-async function extractReceiptItemsWithGemini(text) {
-  if (!geminiClient) {
-    console.log('Gemini client not available, falling back to regex parsing');
+  if (!text || text.trim().length === 0) {
+    console.log('No text provided for LLM processing');
     return null;
   }
 
@@ -488,15 +408,11 @@ JSON Response:`;
     const response = await result.response;
     const responseText = response.text();
 
-    console.log('Gemini AI raw response:', responseText);
-
     // Extract JSON from response
     const jsonMatch = responseText.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
-      console.log('Extracted JSON:', jsonMatch[0]);
       try {
         const items = JSON.parse(jsonMatch[0]);
-        console.log('Parsed items:', items);
 
         // Validate and clean up the items
         const validItems = items.filter(item =>
@@ -508,20 +424,11 @@ JSON Response:`;
 
         console.log(`Gemini extracted ${validItems.length} valid items from receipt`);
         if (validItems.length === 0) {
-          console.log('All items failed validation. Reasons:');
-          items.forEach((item, index) => {
-            const issues = [];
-            if (!item.name) issues.push('missing name');
-            if (typeof item.quantity !== 'number') issues.push('invalid quantity');
-            if (!item.unit) issues.push('missing unit');
-            if (!['Bakery', 'Dairy', 'Fruits', 'Vegetables', 'Meat', 'Drinks', 'Grains', 'Frozen', 'Other'].includes(item.category))
-              issues.push('invalid category');
-            console.log(`Item ${index + 1}: ${JSON.stringify(item)} - Issues: ${issues.join(', ')}`);
-          });
+          console.log('All items failed validation. Using structured data extraction requirements');
         }
         return validItems;
       } catch (parseError) {
-        console.log('JSON parse error:', parseError.message);
+        console.log('JSON parse error - invalid response format');
         return null;
       }
     } else {
@@ -588,22 +495,9 @@ async function detectReceiptInTextWithLLM(text) {
   };
 }
 
-// Helper functions
-function categorizeItem(itemName) {
-  const name = itemName.toLowerCase();
-  if (/bread|bagel|muffin|donut|croissant/.test(name)) return 'Bakery';
-  if (/milk|cheese|yogurt|butter|cream/.test(name)) return 'Dairy';
-  if (/apple|banana|orange|grape|berry/.test(name)) return 'Fruits';
-  if (/lettuce|tomato|onion|carrot|potato/.test(name)) return 'Vegetables';
-  if (/chicken|beef|pork|fish|salmon/.test(name)) return 'Meat';
-  if (/juice|soda|water|coffee|tea/.test(name)) return 'Drinks';
-  if (/cereal|pasta|rice|oats/.test(name)) return 'Grains';
-  if (/frozen/.test(name)) return 'Frozen';
-  return 'Other';
-}
-
+// Helper function to format item names
 function titleCase(str) {
-  return str.toLowerCase().split(' ').map(word => 
+  return str.toLowerCase().split(' ').map(word =>
     word.charAt(0).toUpperCase() + word.slice(1)
   ).join(' ');
 }
