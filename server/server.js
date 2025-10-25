@@ -418,7 +418,6 @@ app.post('/api/analyze-image', async (req, res) => {
       const fullText = detections && detections[0] ? detections[0].description : '';
       const barcodes = barcodeDetection.barcodeAnnotations || [];
 
-      console.log('Detected text:', fullText.substring(0, 200) + '...');
       console.log('🎯 Found', barcodes.length, 'barcode(s) via Vision API');
 
       // Check for actual barcodes FIRST (highest priority)
@@ -449,8 +448,10 @@ app.post('/api/analyze-image', async (req, res) => {
         }
       }
 
+      console.log('📄 No barcode detected, checking for receipt...');
+      console.log('Detected text:', fullText.substring(0, 200) + '...');
+
       // Check for receipt patterns NEXT (only if no barcodes found)
-      console.log('🔍 No barcodes found, checking if text is a receipt...');
       const receiptResult = await detectReceiptInTextWithLLM(fullText);
       if (receiptResult && receiptResult.items && receiptResult.items.length > 0) {
         console.log('🧾 Identified as receipt with', receiptResult.items.length, 'items');
