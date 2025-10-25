@@ -401,29 +401,67 @@ app.post('/api/analyze-image', async (req, res) => {
     
     try {
       const imageBuffer = Buffer.from(imageData.split(',')[1], 'base64');
-      
-      const [textDetection] = await visionClient.textDetection({
-        image: { content: imageBuffer }
-      });
-      
+
+      console.log('🔍 Running both text and barcode detection...');
+
+      // Run both text and barcode detection in parallel
+      const [textDetection, barcodeDetection] = await Promise.all([
+        visionClient.textDetection({
+          image: { content: imageBuffer }
+        }),
+        visionClient.barcodeDetection({
+          image: { content: imageBuffer }
+        })
+      ]);
+
       const detections = textDetection.textAnnotations;
       const fullText = detections && detections[0] ? detections[0].description : '';
-      
+      const barcodes = barcodeDetection.barcodeAnnotations || [];
+
       console.log('Detected text:', fullText.substring(0, 200) + '...');
-      
-      // Check for receipt patterns FIRST (receipts often contain barcode-like numbers)
-      console.log('🔍 Checking if text is a receipt...');
+      console.log('🎯 Found', barcodes.length, 'barcode(s) via Vision API');
+
+      // Check for actual barcodes FIRST (highest priority)
+      if (barcodes.length > 0) {
+        const barcode = barcodes[0]; // Use the first barcode found
+        const barcodeValue = barcode.rawValue || barcode.format || 'UNKNOWN';
+
+        console.log('✅ Barcode detected via Vision API:');
+        console.log('   - Raw value:', barcode.rawValue);
+        console.log('   - Format:', barcode.format);
+        console.log('   - Type:', barcode.formatType);
+
+        // Try to find product in database
+        const productResult = await lookupProductByBarcode(barcodeValue);
+        if (productResult) {
+          return res.json(productResult);
+        } else {
+          // Return basic barcode info if product not found
+          return res.json({
+            type: 'barcode',
+            barcode: barcodeValue,
+            format: barcode.format,
+            confidence: 0.95,
+            message: 'Barcode detected but product not found in database',
+            suggestion: 'You can add this product manually',
+            detectedBy: 'Google Vision API'
+          });
+        }
+      }
+
+      // Check for receipt patterns NEXT (only if no barcodes found)
+      console.log('🔍 No barcodes found, checking if text is a receipt...');
       const receiptResult = await detectReceiptInTextWithLLM(fullText);
       if (receiptResult && receiptResult.items && receiptResult.items.length > 0) {
         console.log('🧾 Identified as receipt with', receiptResult.items.length, 'items');
         return res.json(receiptResult);
       }
 
-      console.log('📦 Not a receipt, checking for standalone barcodes...');
-      // Only check for standalone barcodes if no receipt detected
+      console.log('📦 Not a receipt, checking for standalone barcodes in text...');
+      // Fallback: check for barcode-like numbers in text (less reliable)
       const barcodeResult = detectBarcodeInText(fullText);
       if (barcodeResult) {
-        console.log('🔍 Identified as barcode, looking up product...');
+        console.log('🔍 Identified as barcode from text, looking up product...');
 
         // Try to find product in database
         const productResult = await lookupProductByBarcode(barcodeResult.barcode);
@@ -434,7 +472,8 @@ app.post('/api/analyze-image', async (req, res) => {
           return res.json({
             ...barcodeResult,
             message: 'Barcode detected but product not found in database',
-            suggestion: 'You can add this product manually'
+            suggestion: 'You can add this product manually',
+            detectedBy: 'Text pattern matching'
           });
         }
       }
