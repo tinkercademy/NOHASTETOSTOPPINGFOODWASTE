@@ -1,3 +1,6 @@
+// Load environment variables from .env file
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 const db = require('./database');
@@ -174,6 +177,8 @@ app.get('/api/food-expiration/:name', (req, res) => {
 
 // AI Vision endpoint for image analysis
 const vision = require('@google-cloud/vision');
+const { GoogleAuth } = require('google-auth-library');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fs = require('fs');
 
 // Initialize Vision client with better error handling
@@ -193,6 +198,39 @@ try {
   console.error('Error initializing Google Vision client:', error);
   console.log('Will fall back to mock AI');
 }
+
+// Initialize Gemini AI client
+let geminiClient = null;
+
+async function initializeGeminiClient() {
+  try {
+    // Use the same API key as Vision API (bound to service account)
+    const geminiKey = process.env.GOOGLE_GEMINI_API_KEY;
+    const visionKey = process.env.REACT_APP_GOOGLE_VISION_API_KEY;
+    const apiKey = geminiKey || visionKey;
+
+    console.log('Environment variables loaded:');
+    console.log('GOOGLE_GEMINI_API_KEY exists:', !!geminiKey, '(length:', geminiKey?.length || 0, ')');
+    console.log('REACT_APP_GOOGLE_VISION_API_KEY exists:', !!visionKey, '(length:', visionKey?.length || 0, ')');
+    console.log('Using API key from:', geminiKey ? 'GOOGLE_GEMINI_API_KEY' : 'REACT_APP_GOOGLE_VISION_API_KEY');
+
+    if (apiKey) {
+      console.log('Initializing Google Gemini AI client with API key...');
+      console.log('API key starts with:', apiKey.substring(0, 10) + '...');
+      geminiClient = new GoogleGenerativeAI(apiKey);
+      console.log('Google Gemini AI client initialized successfully');
+    } else {
+      console.log('No Google API key found - will use regex parsing as fallback');
+      console.log('Note: Set REACT_APP_GOOGLE_VISION_API_KEY or GOOGLE_GEMINI_API_KEY');
+    }
+  } catch (error) {
+    console.error('Error initializing Google Gemini client:', error);
+    console.log('Will fall back to regex parsing');
+  }
+}
+
+// Initialize Gemini client asynchronously
+initializeGeminiClient();
 
 app.post('/api/analyze-image', async (req, res) => {
   try {
@@ -223,7 +261,7 @@ app.post('/api/analyze-image', async (req, res) => {
       console.log('Detected text:', fullText.substring(0, 200) + '...');
       
       // Check for receipt patterns FIRST (receipts often contain barcode-like numbers)
-      const receiptResult = detectReceiptInText(fullText);
+      const receiptResult = await detectReceiptInTextWithLLM(fullText);
       if (receiptResult) {
         console.log('Identified as receipt');
         return res.json(receiptResult);
@@ -404,6 +442,150 @@ function parseReceiptLine(line) {
     };
   }
   return null;
+}
+
+// LLM-based receipt parsing using Google Gemini AI
+async function extractReceiptItemsWithGemini(text) {
+  if (!geminiClient) {
+    console.log('Gemini client not available, falling back to regex parsing');
+    return null;
+  }
+
+  try {
+    const model = geminiClient.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+    const prompt = `
+Extract food items from this receipt text. Return ONLY a JSON array of objects with this exact structure:
+[
+  {
+    "name": "item name",
+    "quantity": number,
+    "unit": "item" | "kg" | "g" | "lbs" | "oz" | "L" | "mL",
+    "price": number,
+    "category": "Bakery" | "Dairy" | "Fruits" | "Vegetables" | "Meat" | "Drinks" | "Grains" | "Frozen" | "Other"
+  }
+]
+
+Rules:
+- Only extract food/grocery items (ignore non-food items like electronics, household items, etc.)
+- Handle weight-based items (e.g., "0.5 lbs apples" -> quantity: 0.5, unit: "lbs")
+- Parse quantity from item names (e.g., "2 Dozen Eggs" -> quantity: 24, unit: "item")
+- Handle bulk items (e.g., "Bananas @ $0.59/lb" with weight "1.2 lbs" -> quantity: 1.2, unit: "lbs")
+- Infer appropriate category from item name
+- If quantity not specified, default to 1
+- If unit not specified, use "item"
+- If no price found, set to null
+- Item names should be clean and descriptive
+- Handle common receipt formatting variations
+
+Receipt Text:
+${text}
+
+JSON Response:`;
+
+    console.log('Calling Gemini AI for receipt parsing...');
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const responseText = response.text();
+
+    console.log('Gemini AI raw response:', responseText);
+
+    // Extract JSON from response
+    const jsonMatch = responseText.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      console.log('Extracted JSON:', jsonMatch[0]);
+      try {
+        const items = JSON.parse(jsonMatch[0]);
+        console.log('Parsed items:', items);
+
+        // Validate and clean up the items
+        const validItems = items.filter(item =>
+          item.name &&
+          typeof item.quantity === 'number' &&
+          item.unit &&
+          ['Bakery', 'Dairy', 'Fruits', 'Vegetables', 'Meat', 'Drinks', 'Grains', 'Frozen', 'Other'].includes(item.category)
+        );
+
+        console.log(`Gemini extracted ${validItems.length} valid items from receipt`);
+        if (validItems.length === 0) {
+          console.log('All items failed validation. Reasons:');
+          items.forEach((item, index) => {
+            const issues = [];
+            if (!item.name) issues.push('missing name');
+            if (typeof item.quantity !== 'number') issues.push('invalid quantity');
+            if (!item.unit) issues.push('missing unit');
+            if (!['Bakery', 'Dairy', 'Fruits', 'Vegetables', 'Meat', 'Drinks', 'Grains', 'Frozen', 'Other'].includes(item.category))
+              issues.push('invalid category');
+            console.log(`Item ${index + 1}: ${JSON.stringify(item)} - Issues: ${issues.join(', ')}`);
+          });
+        }
+        return validItems;
+      } catch (parseError) {
+        console.log('JSON parse error:', parseError.message);
+        return null;
+      }
+    } else {
+      console.log('No valid JSON found in Gemini response');
+      return null;
+    }
+  } catch (error) {
+    console.error('Error calling Gemini AI:', error);
+    return null;
+  }
+}
+
+// Updated receipt detection function with LLM integration
+async function detectReceiptInTextWithLLM(text) {
+  if (!text) return null;
+
+  const lines = text.split('\n').map(line => line.trim()).filter(line => line);
+  const lowerText = text.toLowerCase();
+
+  // Strong receipt indicators
+  const strongReceiptIndicators = [
+    'receipt', 'total', 'subtotal', 'tax', 'thank you', 'store',
+    'cashier', 'register', 'transaction', 'purchase', 'sale',
+    'change due', 'amount tendered', 'visa', 'mastercard', 'debit'
+  ];
+
+  // Must have at least one strong indicator
+  const hasStrongIndicator = strongReceiptIndicators.some(indicator =>
+    lowerText.includes(indicator)
+  );
+
+  // Look for price patterns which are common in receipts
+  const pricePattern = /\$\d+\.\d{2}/g;
+  const priceMatches = text.match(pricePattern);
+  const hasPrices = priceMatches && priceMatches.length >= 2; // At least 2 prices
+
+  // Must have either strong indicator OR multiple prices
+  if (!hasStrongIndicator && !hasPrices) {
+    return null;
+  }
+
+  console.log('Receipt detection - Strong indicator:', hasStrongIndicator, 'Prices found:', priceMatches?.length || 0);
+
+  // Try LLM extraction
+  let items = null;
+  if (geminiClient) {
+    items = await extractReceiptItemsWithGemini(text);
+  }
+
+  // If LLM fails, don't fall back to regex parsing (as requested)
+  if (!items || items.length === 0) {
+    console.log('LLM extraction failed or returned no items - not falling back to regex parsing');
+    return null;
+  }
+
+  // Need at least 1 item to be considered a receipt
+  if (items.length === 0) return null;
+
+  console.log('Extracted', items.length, 'items from receipt');
+  return {
+    type: 'receipt',
+    items: items,
+    confidence: 0.8
+  };
 }
 
 // Helper functions
