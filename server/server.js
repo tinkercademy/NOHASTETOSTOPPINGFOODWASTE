@@ -335,21 +335,49 @@ try {
 let geminiClient = null;
 
 async function initializeGeminiClient() {
+  console.log('=== GEMINI CLIENT INITIALIZATION START ===');
+
   try {
     // Use Gemini API key first, then fall back to Vision API key
-    const apiKey = process.env.GOOGLE_GEMINI_API_KEY || process.env.REACT_APP_GOOGLE_VISION_API_KEY;
+    const geminiKey = process.env.GOOGLE_GEMINI_API_KEY;
+    const visionKey = process.env.REACT_APP_GOOGLE_VISION_API_KEY;
+
+    console.log('🔑 GOOGLE_GEMINI_API_KEY exists:', !!geminiKey);
+    console.log('🔑 GOOGLE_GEMINI_API_KEY length:', geminiKey?.length || 0);
+    if (geminiKey) {
+      console.log('🔑 GOOGLE_GEMINI_API_KEY starts with:', geminiKey.substring(0, 10) + '...');
+    }
+
+    console.log('🔑 REACT_APP_GOOGLE_VISION_API_KEY exists:', !!visionKey);
+    console.log('🔑 REACT_APP_GOOGLE_VISION_API_KEY length:', visionKey?.length || 0);
+    if (visionKey) {
+      console.log('🔑 REACT_APP_GOOGLE_VISION_API_KEY starts with:', visionKey.substring(0, 10) + '...');
+    }
+
+    const apiKey = geminiKey || visionKey;
 
     if (apiKey) {
-      console.log('Initializing Google Gemini AI client...');
+      console.log('🚀 Initializing Google Gemini AI client...');
+      console.log('🔑 Using API key source:', geminiKey ? 'GOOGLE_GEMINI_API_KEY' : 'REACT_APP_GOOGLE_VISION_API_KEY');
+
       geminiClient = new GoogleGenerativeAI(apiKey);
-      console.log('Google Gemini AI client initialized successfully');
+
+      console.log('✅ Google Gemini AI client initialized successfully');
+      console.log('🧠 Client object created:', !!geminiClient);
+      console.log('🧠 Client type:', typeof geminiClient);
     } else {
-      console.log('No Google API key found - Gemini AI disabled');
-      console.log('Set GOOGLE_GEMINI_API_KEY or REACT_APP_GOOGLE_VISION_API_KEY');
+      console.log('❌ No Google API key found - Gemini AI disabled');
+      console.log('❌ Set GOOGLE_GEMINI_API_KEY or REACT_APP_GOOGLE_VISION_API_KEY');
+      console.log('❌ Available environment variables:', Object.keys(process.env).filter(key => key.includes('GOOGLE')).join(', '));
     }
   } catch (error) {
-    console.error('Error initializing Google Gemini client:', error);
+    console.log('❌ Error initializing Google Gemini client:');
+    console.log('❌ Error type:', error.constructor.name);
+    console.log('❌ Error message:', error.message);
+    console.log('❌ Error stack:', error.stack);
   }
+
+  console.log('=== GEMINI CLIENT INITIALIZATION END ===');
 }
 
 // Initialize Gemini client asynchronously
@@ -536,18 +564,28 @@ async function lookupProductByBarcode(barcode) {
  * @returns {Array|null} - Array of structured food items or null if extraction fails
  */
 async function extractReceiptItemsWithGemini(text) {
+  console.log('=== GEMINI AI EXTRACTION START ===');
+
   if (!geminiClient) {
-    console.log('Gemini client not available');
+    console.log('❌ Gemini client not available - checking configuration...');
+    console.log('🔑 GOOGLE_GEMINI_API_KEY configured:', !!process.env.GOOGLE_GEMINI_API_KEY);
+    console.log('🔑 GOOGLE_GEMINI_API_KEY length:', process.env.GOOGLE_GEMINI_API_KEY?.length || 0);
+    console.log('🔑 GOOGLE_GEMINI_API_KEY starts with:', process.env.GOOGLE_GEMINI_API_KEY?.substring(0, 10) + '...' || 'NOT_SET');
     return null;
   }
 
   if (!text || text.trim().length === 0) {
-    console.log('No text provided for LLM processing');
+    console.log('❌ No text provided for LLM processing');
     return null;
   }
 
+  console.log('📄 Input text length:', text.length);
+  console.log('📄 Input text preview:', text.substring(0, 200) + '...');
+
   try {
+    console.log('🤖 Initializing Gemini model: gemini-2.5-flash');
     const model = geminiClient.getGenerativeModel({ model: "gemini-2.5-flash" });
+    console.log('✅ Gemini model initialized successfully');
 
     const prompt = `
 Extract ONLY FOOD AND GROCERY items from this receipt text. Ignore all non-food items completely.
@@ -608,42 +646,90 @@ ${text}
 
 JSON Response:`;
 
-    console.log('Calling Gemini AI for receipt parsing...');
+    console.log('📤 Sending prompt to Gemini AI (length:', prompt.length, ')');
+    console.log('🕐 Request timestamp:', new Date().toISOString());
+
     const result = await model.generateContent(prompt);
+    console.log('✅ Gemini AI responded successfully');
+
     const response = await result.response;
     const responseText = response.text();
+
+    console.log('📥 Gemini response length:', responseText.length);
+    console.log('📥 Gemini response preview:', responseText.substring(0, 300) + '...');
+    console.log('🕐 Response timestamp:', new Date().toISOString());
 
     // Extract JSON from response
     const jsonMatch = responseText.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
+      console.log('✅ Found JSON array in response');
+      console.log('🔍 JSON match length:', jsonMatch[0].length);
+
       try {
         const items = JSON.parse(jsonMatch[0]);
+        console.log('✅ JSON parsed successfully');
+        console.log('📦 Total items extracted:', items.length);
+
+        // Log each extracted item for debugging
+        items.forEach((item, index) => {
+          console.log(`📋 Item ${index + 1}:`, JSON.stringify(item, null, 2));
+        });
 
         // Only accept pure food categories - exclude household and personal care
         const foodCategories = ['Produce', 'Dairy', 'Meat', 'Seafood', 'Bakery', 'Pantry', 'Frozen', 'Beverages', 'Snacks', 'Other'];
+        console.log('🍎 Food categories allowed:', foodCategories);
 
-        const validItems = items.filter(item =>
-          item.name &&
-          typeof item.quantity === 'number' &&
-          item.unit &&
-          foodCategories.includes(item.category)
-        );
+        const validItems = items.filter(item => {
+          const isValid = item.name &&
+            typeof item.quantity === 'number' &&
+            item.unit &&
+            foodCategories.includes(item.category);
 
-        console.log(`Gemini extracted ${validItems.length} valid items from receipt`);
+          if (!isValid) {
+            console.log('❌ Invalid item:', JSON.stringify(item, null, 2));
+            console.log('   - Has name:', !!item.name);
+            console.log('   - Quantity type:', typeof item.quantity, 'value:', item.quantity);
+            console.log('   - Has unit:', !!item.unit);
+            console.log('   - Category:', item.category, 'allowed:', foodCategories.includes(item.category));
+          }
+
+          return isValid;
+        });
+
+        console.log(`✅ ${validItems.length} valid food items after filtering`);
         if (validItems.length === 0) {
-          console.log('All items failed validation. Using structured data extraction requirements');
+          console.log('⚠️  All items failed validation - likely non-food items detected');
         }
+
+        console.log('=== GEMINI AI EXTRACTION SUCCESS ===');
         return validItems;
       } catch (parseError) {
-        console.log('JSON parse error - invalid response format');
+        console.log('❌ JSON parse error:', parseError.message);
+        console.log('❌ Invalid response format - response was:', responseText);
         return null;
       }
     } else {
-      console.log('No valid JSON found in Gemini response');
+      console.log('❌ No valid JSON array found in Gemini response');
+      console.log('❌ Full response was:', responseText);
       return null;
     }
   } catch (error) {
-    console.error('Error calling Gemini AI:', error);
+    console.log('❌ === GEMINI AI EXTRACTION FAILED ===');
+    console.log('❌ Error type:', error.constructor.name);
+    console.log('❌ Error message:', error.message);
+    console.log('❌ Error stack:', error.stack);
+
+    // Check for specific error types
+    if (error.message.includes('API_KEY')) {
+      console.log('🔑 API key issue - check GOOGLE_GEMINI_API_KEY configuration');
+    }
+    if (error.message.includes('quota') || error.message.includes('limit')) {
+      console.log('💰 Quota/limit issue - check API usage and billing');
+    }
+    if (error.message.includes('network') || error.message.includes('ENOTFOUND')) {
+      console.log('🌐 Network issue - check internet connectivity');
+    }
+
     return null;
   }
 }
