@@ -28,6 +28,32 @@ function calculateDaysLeft(expirationDate) {
   return Math.ceil(timeDiff / (1000 * 3600 * 24));
 }
 
+// Calculate expiration date based on food category
+function calculateExpirationDate(category) {
+  const today = new Date();
+
+  // Category-based shelf life in days
+  const categoryShelfLife = {
+    'Produce': 7,        // Fresh fruits and vegetables
+    'Dairy': 7,          // Milk, cheese, yogurt, eggs
+    'Meat': 2,           // Fresh meat, poultry
+    'Seafood': 2,        // Fish, shrimp, seafood
+    'Bakery': 5,         // Bread, pastries, baked goods
+    'Pantry': 365,       // Canned goods, dry pasta, rice, grains
+    'Frozen': 365,       // Frozen foods (last much longer when frozen)
+    'Beverages': 14,      // Juice, soda, water, drinks
+    'Snacks': 90,        // Chips, crackers, nuts (processed)
+    'Other': 7           // Default for uncategorized items
+  };
+
+  const daysToAdd = categoryShelfLife[category] || categoryShelfLife['Other'];
+
+  const expirationDate = new Date(today);
+  expirationDate.setDate(today.getDate() + daysToAdd);
+
+  return expirationDate.toISOString().split('T')[0]; // Return YYYY-MM-DD format
+}
+
 // Get all food items
 app.get('/api/items', (req, res) => {
   try {
@@ -441,7 +467,26 @@ app.post('/api/analyze-image', async (req, res) => {
       const receiptResult = await detectReceiptInTextWithLLM(fullText);
       if (receiptResult && receiptResult.items && receiptResult.items.length > 0) {
         console.log('🧾 Identified as receipt with', receiptResult.items.length, 'items');
-        return res.json(receiptResult);
+
+        // Calculate expiration dates for receipt items based on category
+        const itemsWithExpiration = receiptResult.items.map(item => {
+          const expirationDate = calculateExpirationDate(item.category);
+          return {
+            ...item,
+            expiration_date: expirationDate,
+            days_left: calculateDaysLeft(expirationDate)
+          };
+        });
+
+        console.log('✅ Added expiration dates to', itemsWithExpiration.length, 'items');
+        itemsWithExpiration.forEach((item, index) => {
+          console.log(`   ${index + 1}. ${item.name} (${item.category}) - ${item.days_left} days left`);
+        });
+
+        return res.json({
+          ...receiptResult,
+          items: itemsWithExpiration
+        });
       }
       
       // Nothing found
