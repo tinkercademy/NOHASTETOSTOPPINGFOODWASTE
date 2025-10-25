@@ -16,8 +16,8 @@
 #include "Adafruit_ILI9341.h"
 
 // --- WiFi Credentials ---
-const char* ssid = "aaaalex";
-const char* password = "fccccy0305";
+const char* ssid = "tinkertanker-guest";
+const char* password = "gethacking.com";
 
 // --- Display Pin Configuration (Software SPI) ---
 #define TFT_SCLK 20
@@ -59,14 +59,17 @@ void setupWifi() {
 //     FETCH AND DISPLAY DATA
 // =====================================================================
 void checkExpiringFood() {
+  Serial.println("=== checkExpiringFood() called ===");
   if (WiFi.status() == WL_CONNECTED) {
     HTTPClient http;
-    
+
     Serial.print("Making GET request to: ");
     Serial.println(api_url);
-    
+
     http.begin(api_url);
+    Serial.println("HTTP GET started...");
     int httpCode = http.GET();
+    Serial.printf("HTTP response code: %d\n", httpCode);
 
     if (httpCode == 200) {
       String payload = http.getString();
@@ -117,8 +120,14 @@ void checkExpiringFood() {
     http.end();
   } else {
     Serial.println("WiFi not connected");
+    tft.fillScreen(ILI9341_ORANGE);
+    tft.setCursor(10, 10);
+    tft.setTextSize(2);
+    tft.println("WiFi Disconnected");
   }
+  Serial.println("=== checkExpiringFood() finished ===");
 }
+
 
 // =====================================================================
 //     MAIN SETUP & LOOP
