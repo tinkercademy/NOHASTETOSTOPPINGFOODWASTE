@@ -59,9 +59,18 @@ export const BarcodeScanner: React.FC = () => {
 
   const handleReceiptDetection = async (items: any[]) => {
     try {
+      console.log('🛒 Processing receipt items:', items);
+
       // Add all items from receipt - use backend-calculated expiration dates
-      const promises = items.map(item =>
-        foodApi.addItem({
+      const promises = items.map((item, index) => {
+        console.log(`Adding item ${index + 1}:`, {
+          name: item.name,
+          category: item.category,
+          expiration_date: item.expiration_date,
+          expirationDate: new Date(item.expiration_date)
+        });
+
+        return foodApi.addItem({
           name: item.name,
           description: `From receipt scan`,
           category: item.category,
@@ -69,17 +78,19 @@ export const BarcodeScanner: React.FC = () => {
           quantity: item.quantity,
           unit: item.unit,
           upcCode: undefined
-        })
-      );
-      
+        });
+      });
+
       await Promise.all(promises);
-      
+      console.log('✅ All receipt items added successfully');
+
       // Navigate back to home to see added items
       setTimeout(() => {
         navigate('/');
       }, 2000);
     } catch (error) {
-      console.error('Error adding receipt items:', error);
+      console.error('❌ Error adding receipt items:', error);
+      console.error('❌ Error details:', error.response?.data || error.message);
     }
   };
 
