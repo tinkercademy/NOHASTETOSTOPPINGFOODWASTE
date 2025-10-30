@@ -793,11 +793,12 @@ async function detectReceiptInTextWithLLM(text) {
   const lines = text.split('\n').map(line => line.trim()).filter(line => line);
   const lowerText = text.toLowerCase();
 
-  // Strong receipt indicators (very specific to avoid barcode confusion)
+  // Strong receipt indicators (made more flexible)
   const strongReceiptIndicators = [
     'receipt', 'total', 'subtotal', 'tax', 'thank you', 'store',
     'cashier', 'register', 'transaction', 'purchase', 'sale',
-    'change due', 'amount tendered', 'visa', 'mastercard', 'debit'
+    'change due', 'amount tendered', 'visa', 'mastercard', 'debit',
+    'gst no', 'gst', 'normal price', 'unit', 'for $'
   ];
 
   // Must have at least one strong indicator
@@ -808,19 +809,20 @@ async function detectReceiptInTextWithLLM(text) {
   // Look for price patterns which are common in receipts
   const pricePattern = /\$\d+\.\d{2}/g;
   const priceMatches = text.match(pricePattern);
-  const hasPrices = priceMatches && priceMatches.length >= 3; // At least 3 prices for receipts
+  const hasPrices = priceMatches && priceMatches.length >= 2; // Reduced to 2 prices
 
   // Additional receipt indicators - look for common receipt line items
   const hasReceiptLines = lines.some(line =>
     (line.match(/\d+\.\d{2}$/) && line.length > 10) || // Lines ending in prices
     lowerText.includes('qty') ||
     lowerText.includes('description') ||
-    lowerText.includes('amount')
+    lowerText.includes('amount') ||
+    lowerText.includes('unit') ||
+    lowerText.includes('normal price')
   );
 
-  // Must have strong indicator AND either multiple prices OR receipt lines
-  // This is stricter to avoid confusing barcode labels with receipts
-  if (!hasStrongIndicator || (!hasPrices && !hasReceiptLines)) {
+  // More flexible receipt detection - strong indicator OR (multiple prices AND receipt lines)
+  if (!hasStrongIndicator && (!hasPrices || !hasReceiptLines)) {
     return null;
   }
 
