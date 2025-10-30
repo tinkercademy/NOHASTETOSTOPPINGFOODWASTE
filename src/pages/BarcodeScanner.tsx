@@ -59,13 +59,13 @@ export const BarcodeScanner: React.FC = () => {
 
   const handleReceiptDetection = async (items: any[]) => {
     try {
-      // Add all items from receipt
-      const promises = items.map(item => 
+      // Add all items from receipt - use backend-calculated expiration dates
+      const promises = items.map(item =>
         foodApi.addItem({
           name: item.name,
           description: `From receipt scan`,
           category: item.category,
-          expirationDate: getSuggestedExpirationDate(item.category),
+          expirationDate: new Date(item.expiration_date),
           quantity: item.quantity,
           unit: item.unit,
           upcCode: undefined
