@@ -94,7 +94,7 @@ void checkExpiringFood() {
       JsonArray items = doc["items"];
 
       // Display on TFT
-      tft.fillScreen(ILI9341_BLACK);
+      tft.fillScreen(ILI9341_GREEN);
       tft.setCursor(0, 5);
       tft.setTextColor(ILI9341_YELLOW);
       tft.setTextSize(2);
